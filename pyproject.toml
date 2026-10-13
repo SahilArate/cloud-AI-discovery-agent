@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "moto[ec2,lambda,iam,sagemaker,secretsmanager,cloudtrail]>=5.0",
+    "moto[awslambda,ec2,sagemaker,secretsmanager]>=5.0",
     "ruff>=0.4",
 ]
 
