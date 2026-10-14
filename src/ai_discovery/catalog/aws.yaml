@@ -1,0 +1,66 @@
+catalog_version: "2026.10.1"
+provider: aws
+
+# Services that are AI by nature. Finding a resource here is strong evidence.
+managed_ai_services:
+  - service: sagemaker
+    resource_type: endpoint
+    list_operation: ListEndpoints
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: cloudwatch_invocations
+
+  - service: sagemaker
+    resource_type: notebook_instance
+    list_operation: ListNotebookInstances
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: none
+
+  - service: bedrock
+    resource_type: provisioned_model_throughput
+    list_operation: ListProvisionedModelThroughputs
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: cloudwatch_invocations
+
+# Ordinary compute that may run AI. Needs extra evidence before we call it AI.
+compute_services:
+  - service: lambda
+    resource_type: function
+    list_operation: ListFunctions
+    inspect_fields: [environment_variable_names, layers, runtime]
+    usage_source: cloudwatch_invocations
+
+  - service: ec2
+    resource_type: instance
+    list_operation: DescribeInstances
+    inspect_fields: [instance_type, tags]
+    usage_source: none
+
+# Secrets are checked by name only. Values are never read.
+identity_services:
+  - service: secretsmanager
+    resource_type: secret
+    list_operation: ListSecrets
+    inspect_fields: [name]
+
+# Name patterns and instance families that act as evidence.
+# Env var and secret names are leads, not proof.
+signals:
+  ai_secret_name_patterns:
+    - OPENAI_API_KEY
+    - ANTHROPIC_API_KEY
+    - GROQ_API_KEY
+    - GEMINI_API_KEY
+    - HUGGINGFACE_TOKEN
+    - COHERE_API_KEY
+  ai_dependency_names:
+    - openai
+    - anthropic
+    - langchain
+    - transformers
+    - torch
+    - llama-index
+  gpu_instance_prefixes: [p3, p4d, p5, g4dn, g5, g6, inf1, inf2, trn1]
+  name_hints: [llm, rag, chatbot, genai, embedding, copilot]

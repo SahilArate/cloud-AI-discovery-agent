@@ -28,6 +28,8 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+[tool.setuptools.package-data]
+ai_discovery = ["catalog/*.yaml"]
 where = ["src"]
 
 [tool.pytest.ini_options]

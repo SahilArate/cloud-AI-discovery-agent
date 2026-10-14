@@ -1,0 +1,34 @@
+"""Common interface for cloud collectors."""
+
+from abc import ABC, abstractmethod
+
+from pydantic import BaseModel, Field
+
+from ai_discovery.models.coverage import ScopeCoverage
+from ai_discovery.models.enums import CloudProvider
+from ai_discovery.models.resource import Resource
+
+
+class ScanScope(BaseModel):
+    """What the client allowed us to look at."""
+
+    account_id: str
+    regions: list[str]
+
+
+class CollectionResult(BaseModel):
+    """Resources found plus a record of what we could and couldn't inspect."""
+
+    resources: list[Resource] = Field(default_factory=list)
+    coverage: list[ScopeCoverage] = Field(default_factory=list)
+
+
+class BaseCollector(ABC):
+    """Collectors only read. They never classify, and they never call an LLM."""
+
+    provider: CloudProvider
+
+    @abstractmethod
+    def collect(self, scope: ScanScope) -> CollectionResult:
+        """List resources in the scope. A failure in one service must not stop the others:
+        record it as a ScopeCoverage with errors and carry on."""
