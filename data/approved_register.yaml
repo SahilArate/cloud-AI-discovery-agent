@@ -1,0 +1,26 @@
+entries:
+  - register_id: AI-001
+    name: Finance summariser
+    provider: aws
+    account_id: "123456789012"
+    native_ids:
+      - arn:aws:lambda:ap-south-1:123456789012:function:approved-summariser
+    approved_regions: [ap-south-1]
+    owner: finance-team
+
+  - register_id: AI-002
+    name: Churn model
+    provider: aws
+    account_id: "123456789012"
+    native_ids:
+      - arn:aws:sagemaker:ap-south-1:123456789012:endpoint/churn-predictor
+    approved_regions: [ap-south-1]
+    owner: data-science
+
+  - register_id: AI-003
+    name: Research notebook
+    provider: aws
+    account_id: "123456789012"
+    native_ids:
+      - arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/research-notebook
+    approved_regions: [ap-south-1]

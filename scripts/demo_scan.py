@@ -17,8 +17,9 @@ from ai_discovery.collectors.aws import AWSCollector
 from ai_discovery.collectors.base import ScanScope
 from ai_discovery.db.session import session_scope
 from ai_discovery.db.tables import AssetObservation, ScanScopeResult
-from ai_discovery.governance.register import ApprovedEntry, ApprovedRegister
-from ai_discovery.models.enums import CloudProvider
+from pathlib import Path
+
+from ai_discovery.governance.register import load_register
 from ai_discovery.pipeline.scan import run_scan
 
 # Fake credentials, so nothing here can ever reach a real account.
@@ -30,6 +31,7 @@ HOME_REGION = "ap-south-1"
 OTHER_REGION = "us-east-1"
 ROLE_ARN = f"arn:aws:iam::{ACCOUNT_ID}:role/demo-role"
 FAKE_KEY_VALUE = "sk-demo-not-a-real-key"
+REGISTER_PATH = Path(__file__).resolve().parent.parent / "data" / "approved_register.yaml"
 
 
 def _zip_bytes() -> bytes:
@@ -139,40 +141,6 @@ def build_messy_account() -> None:
     )
 
 
-def build_register() -> ApprovedRegister:
-    arn = f"arn:aws:%s:%s:{ACCOUNT_ID}:%s"
-    return ApprovedRegister(
-        entries=[
-            ApprovedEntry(
-                register_id="AI-001",
-                name="Finance summariser",
-                provider=CloudProvider.AWS,
-                account_id=ACCOUNT_ID,
-                native_ids=[arn % ("lambda", HOME_REGION, "function:approved-summariser")],
-                approved_regions=[HOME_REGION],
-                owner="finance-team",
-            ),
-            ApprovedEntry(
-                register_id="AI-002",
-                name="Churn model",
-                provider=CloudProvider.AWS,
-                account_id=ACCOUNT_ID,
-                native_ids=[arn % ("sagemaker", HOME_REGION, "endpoint/churn-predictor")],
-                approved_regions=[HOME_REGION],
-                owner="data-science",
-            ),
-            ApprovedEntry(
-                register_id="AI-003",
-                name="Research notebook",
-                provider=CloudProvider.AWS,
-                account_id=ACCOUNT_ID,
-                native_ids=[arn % ("sagemaker", OTHER_REGION, "notebook-instance/research-notebook")],
-                approved_regions=[HOME_REGION],
-            ),
-        ]
-    )
-
-
 def print_results(summary) -> None:
     print(f"\nScan {summary.scan_id}")
     print(f"  resources seen : {summary.resources_seen}")
@@ -213,7 +181,7 @@ def main() -> None:
     with mock_aws():
         build_messy_account()
         scope = ScanScope(account_id=ACCOUNT_ID, regions=[HOME_REGION, OTHER_REGION])
-        summary = run_scan(AWSCollector(), scope, build_register())
+        summary = run_scan(AWSCollector(), scope, load_register(REGISTER_PATH))
     print_results(summary)
 
 
