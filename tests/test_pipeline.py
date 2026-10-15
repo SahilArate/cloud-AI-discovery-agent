@@ -105,7 +105,7 @@ def test_scan_stores_ai_assets_and_skips_plain_resources(test_database, aws_acco
         assert observation.asset_key == INVOICE_HELPER_KEY
         assert observation.approval_status == "potential_shadow_ai"
         assert observation.owner_source == "unknown"
-        assert observation.activity_status == "activity_unknown"
+        assert observation.activity_status == "no_activity_observed"
 
 
 def test_second_scan_adds_an_observation_and_keeps_first_seen(test_database, aws_account):
