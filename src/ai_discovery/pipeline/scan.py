@@ -80,7 +80,7 @@ def run_scan(
                 continue
 
             owner = resolve_owner(resource)
-            usage = summarise_usage(None)  # no metrics reader yet, so activity is unknown
+            usage = summarise_usage(collector.read_usage(resource))
             match = register.match(resource, owner=owner.owner)
             assessment = assess(finding, match, owner.source)
 

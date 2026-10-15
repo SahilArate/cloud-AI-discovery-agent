@@ -1,6 +1,7 @@
 """AWS collector. Read-only: it lists resources and records what it could not see."""
 
 import boto3
+from ai_discovery.collectors.usage_aws import read_invocation_count
 from botocore.exceptions import BotoCoreError, ClientError
 
 from ai_discovery.catalog.loader import load_catalog
@@ -37,6 +38,9 @@ class AWSCollector(BaseCollector):
                 result.resources.extend(resources)
                 result.coverage.append(coverage)
         return result
+
+    def read_usage(self, resource: Resource) -> int | None:
+        return read_invocation_count(self._session, resource)
 
     def _collect_lambda_functions(
         self, account_id: str, region: str

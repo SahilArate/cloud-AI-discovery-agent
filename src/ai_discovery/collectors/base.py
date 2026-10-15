@@ -32,3 +32,7 @@ class BaseCollector(ABC):
     def collect(self, scope: ScanScope) -> CollectionResult:
         """List resources in the scope. A failure in one service must not stop the others:
         record it as a ScopeCoverage with errors and carry on."""
+
+    def read_usage(self, resource: Resource) -> int | None:
+        """Calls in the last 30 days, or None if this collector can't measure it."""
+        return None

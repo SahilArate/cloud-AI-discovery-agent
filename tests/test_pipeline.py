@@ -133,3 +133,29 @@ def test_secret_value_never_reaches_the_database(test_database, aws_account):
 
     assert details == ["env var name OPENAI_API_KEY"]
     assert FAKE_SECRET_VALUE not in " ".join(details + reasons)
+
+def test_lambda_invocations_make_the_asset_active(test_database, aws_account):
+    from datetime import datetime, timezone
+
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    boto3.client("cloudwatch", region_name=REGION).put_metric_data(
+        Namespace="AWS/Lambda",
+        MetricData=[
+            {
+                "MetricName": "Invocations",
+                "Dimensions": [{"Name": "FunctionName", "Value": "invoice-helper"}],
+                "Timestamp": datetime.now(timezone.utc),
+                "Value": 4000,
+                "Unit": "Count",
+            }
+        ],
+    )
+
+    _scan()
+
+    with session_scope() as session:
+        observation = session.scalars(select(AssetObservation)).one()
+
+    assert observation.activity_status == "active_observed"
+    assert observation.usage_count == 4000
+    assert observation.usage_window_days == 30
