@@ -8,7 +8,9 @@ import boto3
 import pytest
 from moto import mock_aws
 from sqlalchemy import func, select
-
+from ai_discovery.llm.providers import LLMProvider
+from ai_discovery.llm.router import LLMRouter
+from ai_discovery.llm.types import LLMRequest, LLMResponse, ModelSpec, ModelTier
 from ai_discovery.collectors.aws import AWSCollector
 from ai_discovery.collectors.base import ScanScope
 from ai_discovery.config import get_settings
@@ -159,3 +161,83 @@ def test_lambda_invocations_make_the_asset_active(test_database, aws_account):
     assert observation.activity_status == "active_observed"
     assert observation.usage_count == 4000
     assert observation.usage_window_days == 30
+
+SMALL = ModelSpec(
+    tier=ModelTier.SMALL, model_name="fake-small",
+    input_price_per_million=1.0, output_price_per_million=1.0,
+)
+LARGE = ModelSpec(
+    tier=ModelTier.LARGE, model_name="fake-large",
+    input_price_per_million=10.0, output_price_per_million=10.0,
+)
+
+
+class EchoInspectorProvider(LLMProvider):
+    """Answers every request with a fixed verdict, citing the first evidence id it was sent."""
+
+    def __init__(self, verdict: str) -> None:
+        self._verdict = verdict
+        self.requests: list[LLMRequest] = []
+
+    def complete(self, request: LLMRequest, model_name: str) -> LLMResponse:
+        self.requests.append(request)
+        package = json.loads(request.user_prompt)
+        answer = {
+            "verdict": self._verdict,
+            "confidence": 0.6,
+            "reasoning": "Scripted answer for the test.",
+            "evidence_ids": [package["evidence"][0]["id"]],
+            "missing_evidence": ["runtime_invocations"],
+        }
+        return LLMResponse(
+            text=json.dumps(answer), model_name=model_name,
+            input_tokens=100, output_tokens=50, latency_ms=5,
+        )
+
+
+def _scan_with(router: LLMRouter):
+    scope = ScanScope(account_id=ACCOUNT_ID, regions=[REGION])
+    return run_scan(AWSCollector(), scope, ApprovedRegister(), router)
+
+
+def _add_notebook(name: str) -> None:
+    boto3.client("sagemaker", region_name=REGION).create_notebook_instance(
+        NotebookInstanceName=name, InstanceType="ml.t3.medium", RoleArn=ROLE_ARN
+    )
+
+
+def test_only_ambiguous_findings_reach_the_llm(test_database, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})  # suspected
+    _add_notebook("research-notebook")  # confirmed by the rules
+    _add_lambda("report-builder")  # plain
+    provider = EchoInspectorProvider("ai_suspected")
+    router = LLMRouter(provider, SMALL, LARGE)
+
+    _scan_with(router)
+
+    assert len(provider.requests) == 1
+    assert "invoice-helper" in provider.requests[0].user_prompt
+    assert "research-notebook" not in provider.requests[0].user_prompt
+    assert "report-builder" not in provider.requests[0].user_prompt
+
+
+def test_llm_decision_is_stored_and_stays_in_review(test_database, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    router = LLMRouter(EchoInspectorProvider("ai_suspected"), SMALL, LARGE)
+
+    _scan_with(router)
+
+    with session_scope() as session:
+        observation = session.scalars(select(AssetObservation)).one()
+    assert observation.decided_by == "llm_inspector"
+    assert observation.review_required
+
+
+def test_llm_can_clear_a_finding_out_of_the_inventory(test_database, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    router = LLMRouter(EchoInspectorProvider("not_ai_evidenced"), SMALL, LARGE)
+
+    summary = _scan_with(router)
+
+    assert summary.assets_recorded == 0
+    assert summary.verdict_counts == {"not_ai_evidenced": 1}
