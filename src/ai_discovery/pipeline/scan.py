@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ai_discovery.agents.inspector import inspect
+from ai_discovery.llm.router import LLMRouter
 from ai_discovery.catalog.loader import load_catalog
 from ai_discovery.collectors.base import BaseCollector, ScanScope
 from ai_discovery.config import get_settings
@@ -56,7 +58,10 @@ def _upsert_asset(session: Session, resource: Resource, now: datetime) -> None:
 
 
 def run_scan(
-    collector: BaseCollector, scope: ScanScope, register: ApprovedRegister
+    collector: BaseCollector,
+    scope: ScanScope,
+    register: ApprovedRegister,
+    router: LLMRouter | None = None,
 ) -> ScanSummary:
     catalog = load_catalog(collector.provider)
     verdict_counts: Counter[str] = Counter()
@@ -73,6 +78,12 @@ def run_scan(
         for resource in result.resources:
             evidence = gather_evidence(resource, catalog)
             finding = classify(resource, evidence)
+                        # Only ambiguous findings go to the LLM. Confirmed and clean ones never do.
+            if router is not None and finding.verdict in (
+                AIVerdict.AI_SUSPECTED,
+                AIVerdict.UNKNOWN,
+            ):
+                finding = inspect(resource, finding, router)
             verdict_counts[finding.verdict.value] += 1
 
             # Resources with no AI evidence are counted but not stored as assets.
