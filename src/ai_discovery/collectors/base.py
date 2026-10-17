@@ -39,6 +39,10 @@ class BaseCollector(ABC):
         """Calls in the last 30 days, or None if this collector can't measure it."""
         return None
 
+    def find_creator(self, resource: Resource) -> str | None:
+        """Who created the resource, if this collector can tell. Only ever a hint."""
+        return None
+
 def coverage_status_for(discovered: int, errors: list[CollectionError]) -> CoverageStatus:
     """Complete with no errors, failed if nothing was found and something broke, else partial."""
     if not errors:

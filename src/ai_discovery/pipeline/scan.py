@@ -104,7 +104,10 @@ def _record_target(
         if finding.verdict == AIVerdict.NOT_AI_EVIDENCED:
             continue
 
+                # Only look up a creator when no explicit owner tag exists, to save API calls.
         owner = resolve_owner(resource)
+        if owner.owner is None:
+            owner = resolve_owner(resource, creator_hint=collector.find_creator(resource))
         usage = summarise_usage(collector.read_usage(resource))
         match = register.match(resource, owner=owner.owner)
         assessment = assess(finding, match, owner.source)

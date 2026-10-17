@@ -9,6 +9,7 @@ from ai_discovery.collectors.base import BaseCollector, CollectionResult, ScanSc
 from ai_discovery.models.coverage import CollectionError, ScopeCoverage
 from ai_discovery.models.enums import CloudProvider, CoverageStatus
 from ai_discovery.models.resource import Resource
+from ai_discovery.collectors.owner_hints_aws import find_creator
 
 
 def _error_code(error: Exception) -> str:
@@ -41,6 +42,9 @@ class AWSCollector(BaseCollector):
 
     def read_usage(self, resource: Resource) -> int | None:
         return read_invocation_count(self._session, resource)
+
+    def find_creator(self, resource: Resource) -> str | None:
+        return find_creator(self._session, resource)
 
     def _collect_lambda_functions(
         self, account_id: str, region: str
