@@ -168,3 +168,13 @@ def test_gpu_machine_type_and_api_key_name_are_recognised():
 
     assert verdicts["run"] == AIVerdict.AI_SUSPECTED
     assert verdicts["compute"] == AIVerdict.UNKNOWN
+
+def test_gcp_secret_named_like_an_ai_key_is_a_lead():
+    api = FakeGCPApi(secrets=[{"name": f"projects/{PROJECT}/secrets/OPENAI_API_KEY"}])
+    result = _collect(api)
+    catalog = load_catalog(CloudProvider.GCP)
+    secret = result.resources[0]
+
+    finding = classify(secret, gather_evidence(secret, catalog))
+
+    assert finding.verdict == AIVerdict.AI_SUSPECTED
