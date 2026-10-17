@@ -13,6 +13,7 @@ from ai_discovery.db.tables import (
 )
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+from fastapi.middleware.cors import CORSMiddleware
 
 from ai_discovery.db.session import session_scope
 from ai_discovery.db.tables import AIAsset, AssetObservation, ScanRun, ScanScopeResult
@@ -24,6 +25,12 @@ from ai_discovery.models.enums import ReviewStatus
 
 app = FastAPI(title="AI Discovery Agent", version="0.1.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 def get_session() -> Iterator[Session]:
     with session_scope() as session:
