@@ -2,6 +2,22 @@
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+export type CostSummary = {
+  scan_id: string;
+  llm_used: boolean;
+  small_model: string;
+  large_model: string;
+  total_calls: number;
+  calls_by_tier: Record<string, number>;
+  escalated_calls: number;
+  outcomes: Record<string, number>;
+  total_cost_usd: number;
+  all_large_cost_usd: number;
+  saving_usd: number;
+  cost_by_task: Record<string, number>;
+  note: string;
+};
+
 export type InventoryItem = {
   asset_key: string;
   name: string;
@@ -133,6 +149,7 @@ export const api = {
   inventory: async () => (await getJson<InventoryItem[]>("/inventory")) ?? [],
   // encodeURI keeps the slashes, because the backend route is /assets/{asset_key:path}.
   asset: (assetKey: string) => getJson<AssetDetail>(`/assets/${encodeURI(assetKey)}`),
+  llmCost: () => getJson<CostSummary>("/llm/cost"),
   coverage: () => getJson<CoverageReport>("/coverage/latest"),
   changes: () => getJson<ChangeReport>("/changes"),
   reviewQueue: async () => (await getJson<QueueItem[]>("/reviews/queue")) ?? [],

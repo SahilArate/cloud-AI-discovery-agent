@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/review", label: "Review queue" },
   { href: "/coverage", label: "Coverage" },
   { href: "/changes", label: "Changes" },
+  { href: "/costs", label: "LLM cost" },
 ];
 
 export default function NavBar() {

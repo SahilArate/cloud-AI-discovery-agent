@@ -16,12 +16,17 @@ from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai_discovery.db.session import session_scope
-from ai_discovery.db.tables import AIAsset, AssetObservation, ScanRun, ScanScopeResult
+from ai_discovery.db.tables import AIAsset, AssetObservation, ScanRun, ScanScopeResult,LLMCall
 from sqlalchemy.dialects.postgresql import distinct_on
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, StringConstraints
 from ai_discovery.models.enums import ReviewStatus
+
+from ai_discovery.config import get_settings
+from ai_discovery.llm.factory import build_model_specs
+from ai_discovery.llm.report import build_cost_report
+from ai_discovery.llm.types import CallRecord, ModelTier
 
 app = FastAPI(title="AI Discovery Agent", version="0.1.0")
 
@@ -426,3 +431,66 @@ def review_history(asset_key: str, session: Session = Depends(get_session)) -> l
         .order_by(GovernanceReview.created_at.desc())
     ).all()
     return [_to_review_item(review) for review in reviews]
+
+class CostSummary(BaseModel):
+    scan_id: str
+    llm_used: bool
+    small_model: str
+    large_model: str
+    total_calls: int
+    calls_by_tier: dict[str, int]
+    escalated_calls: int
+    outcomes: dict[str, int]
+    total_cost_usd: float
+    all_large_cost_usd: float
+    saving_usd: float
+    cost_by_task: dict[str, float]
+    note: str
+
+
+@app.get("/llm/cost", response_model=CostSummary)
+def llm_cost(session: Session = Depends(get_session)) -> CostSummary:
+    scans = _latest_scans(session, 1)
+    if not scans:
+        raise HTTPException(status_code=404, detail="no scans yet")
+    scan = scans[0]
+
+    rows = session.scalars(
+        select(LLMCall).where(LLMCall.scan_id == scan.scan_id).order_by(LLMCall.called_at)
+    ).all()
+    calls = [
+        CallRecord(
+            task=row.task,
+            tier=ModelTier(row.tier),
+            model_name=row.model_name,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            cost_usd=row.cost_usd,
+            latency_ms=row.latency_ms,
+            outcome=row.outcome,
+            escalated_from=ModelTier(row.escalated_from) if row.escalated_from else None,
+            called_at=row.called_at,
+        )
+        for row in rows
+    ]
+
+    small, large = build_model_specs(get_settings())
+    report = build_cost_report(calls, large)
+    return CostSummary(
+        scan_id=scan.scan_id,
+        llm_used=bool(calls),
+        small_model=small.model_name,
+        large_model=large.model_name,
+        total_calls=report.total_calls,
+        calls_by_tier=report.calls_by_tier,
+        escalated_calls=report.escalated_calls,
+        outcomes=report.outcomes,
+        total_cost_usd=report.total_cost_usd,
+        all_large_cost_usd=report.all_large_cost_usd,
+        saving_usd=report.saving_usd,
+        cost_by_task=report.cost_by_task,
+        note=(
+            "The all-large figure is an estimate: it reuses the small model's token counts "
+            "and today's configured prices."
+        ),
+    )
