@@ -106,12 +106,46 @@ def _name_hint_evidence(resource: Resource, catalog: Catalog) -> list[Evidence]:
         )
     ]
 
+def _layer_package_name(layer_arn: str) -> str:
+    """Layer ARNs look like arn:aws:lambda:region:account:layer:NAME:VERSION."""
+    parts = layer_arn.split(":")
+    if "layer" in parts:
+        index = parts.index("layer")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return parts[-1]
+
+
+def _dependency_evidence(resource: Resource, catalog: Catalog) -> list[Evidence]:
+    layers = resource.config.get("layers")
+    if not isinstance(layers, list):
+        return []
+
+    found: list[Evidence] = []
+    for layer_arn in layers:
+        layer_name = _layer_package_name(str(layer_arn))
+        lowered = layer_name.lower()
+        for package in catalog.signals.ai_dependency_names:
+            pattern = rf"(?<![a-z0-9]){re.escape(package.lower())}(?![a-z0-9])"
+            if re.search(pattern, lowered):
+                found.append(
+                    _make_evidence(
+                        resource,
+                        EvidenceType.AI_DEPENDENCY,
+                        EvidenceStrength.SUPPORTING,  # the package may be bundled but unused
+                        source=f"{resource.service}_layers",
+                        detail=f"layer {layer_name} matches AI package {package}",
+                    )
+                )
+                break  # one piece of evidence per layer is enough
+    return found
 
 def gather_evidence(resource: Resource, catalog: Catalog) -> list[Evidence]:
     """Every clue we can find for one resource, in a fixed order."""
     return [
         *_managed_service_evidence(resource, catalog),
         *_secret_name_evidence(resource, catalog),
+        *_dependency_evidence(resource, catalog),
         *_gpu_evidence(resource, catalog),
         *_name_hint_evidence(resource, catalog),
     ]

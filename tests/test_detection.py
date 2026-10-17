@@ -106,3 +106,38 @@ def test_evidence_never_contains_a_secret_value(catalog):
     evidence = gather_evidence(resource, catalog)
 
     assert evidence[0].detail == "env var name OPENAI_API_KEY"
+
+
+LAYER_BASE = f"arn:aws:lambda:{REGION}:{ACCOUNT_ID}:layer"
+
+
+def test_ai_package_layer_is_supporting_evidence(catalog):
+    resource = _make_resource(
+        "lambda", "function", "report-builder",
+        config={"layers": [f"{LAYER_BASE}:openai-python:3"]},
+    )
+
+    evidence = gather_evidence(resource, catalog)
+
+    assert [item.evidence_type for item in evidence] == [EvidenceType.AI_DEPENDENCY]
+    assert evidence[0].detail == "layer openai-python matches AI package openai"
+    assert _judge(resource, catalog).verdict == AIVerdict.AI_SUSPECTED
+
+
+def test_unrelated_layer_is_not_evidence(catalog):
+    resource = _make_resource(
+        "lambda", "function", "report-builder",
+        config={"layers": [f"{LAYER_BASE}:shared-utils:1"]},
+    )
+
+    assert gather_evidence(resource, catalog) == []
+
+
+def test_layer_match_respects_package_boundaries(catalog):
+    # "torch" sits inside "pytorch" and "torchlight", but is not a standalone word there.
+    resource = _make_resource(
+        "lambda", "function", "report-builder",
+        config={"layers": [f"{LAYER_BASE}:torchlight-theme:1"]},
+    )
+
+    assert gather_evidence(resource, catalog) == []
