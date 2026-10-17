@@ -1,82 +1,75 @@
 # ai-discovery-agent
 
-Discovers AI usage across cloud accounts, builds an AI inventory aligned with
-ISO/IEC 42001 (AIMS) fields, and flags potential shadow AI.
+Discovers AI usage across AWS, GCP and Azure, builds an AI inventory aligned with the
+ISO/IEC 42001 (AIMS) fields, flags potential shadow AI, and routes LLM work to the cheapest
+model that does the job.
 
-## What it answers
+![Inventory](docs/screenshots/inventory.png)
 
-1. **What AI exists in our cloud?** Owner, hosting, usage, evidence, one-line reasoning.
-2. **Is it approved?** Compared against an approved register, with reason codes.
-3. **Which LLM should do the work, at least cost?** A small router with escalation and a budget cap.
+## The three questions it keeps separate
 
-## Status (read this first)
+1. **Is it AI?** Verdict: `ai_confirmed`, `ai_suspected`, `not_ai_evidenced`, `unknown`.
+2. **Is it being used?** Activity: observed, dormant, none observed, unknown.
+3. **Is it approved?** Approved, potential shadow AI, governance exception, not assessed.
+
+## Status: what is real and what is simulated
 
 | Area | State |
 |---|---|
-| AWS collector (Lambda, SageMaker, EC2, Secrets Manager) | Built, tested against **moto** (fake AWS). Never run against a live account. |
-| AWS live mode | Code path exists (`--mode live`), **untested**. |
-| GCP and Azure collectors | Not built yet. Same `BaseCollector` interface. |
+| AWS collector (Lambda, SageMaker, EC2, Secrets Manager) | Built. Tested against **moto** (fake AWS). Never run on a live account. |
+| AWS `--mode live` | Code path exists, **untested**. |
+| GCP and Azure collectors | Built behind injected API interfaces. Run on **fixture data** only. No live adapters. |
 | Detection, enrichment, governance | Built and unit tested. |
-| LLM inspector and router | Built. Tested with a fake provider. Groq is the default provider. |
-| Postgres storage, API | Built and tested against a real Postgres. |
-| Dashboard | Not built. API docs at `/docs`. |
+| Evidence: managed services, secret and env var names, GPU types, name hints, AI-named Lambda layers | Built. |
+| Secret to consumer linking | Name match only, not proof of use. |
+| CloudTrail owner hints | Built, tested with fakes. Moto does not implement `LookupEvents`. |
+| CloudWatch usage (Lambda, SageMaker endpoints) | Built. Tested against moto metrics. |
+| LLM inspector and router | Built. Tested with a fake provider. Real Groq calls verified by hand. |
+| Postgres, API, Next.js dashboard, review queue | Built and tested. |
+| Eval harness | Built. Labels cover the demo estate only. |
+| Network/DNS evidence, SBOM scanning, SaaS discovery | Not built. |
 
-## How it works
+## Architecture
 
 ```
-Catalog (YAML) -> Collector (read-only, no LLM)
-  -> Evidence rules -> Verdict rules
-  -> [ambiguous only] LLM inspector via router
-  -> Owner + usage enrichment -> Approval check vs register
-  -> Postgres (append-only observations) -> API
+Catalog (YAML) -> Collector (read-only, no LLM) -> Evidence rules -> Verdict rules
+   -> [ambiguous only] LLM inspector via router -> Owner + usage enrichment
+   -> Approval check vs register -> Postgres (append-only) -> FastAPI -> Next.js
 ```
 
 Key decisions:
 
-- **Discovery, classification and approval are separate questions.** Each has its own field.
-- **Verdicts are `ai_confirmed`, `ai_suspected`, `not_ai_evidenced`, `unknown`.** Rules, not scores:
-  a managed AI service is strong evidence; an `OPENAI_API_KEY` name is only a lead.
-- **Activity is separate from the verdict.** An idle endpoint is still AI.
-- **The LLM is optional.** Without a key, or if the provider fails, the rules result stands
-  and the item stays in review. The inspector can never return `ai_confirmed`.
-- **No secret values, ever.** Only env var and secret *names* are collected. Tested down to the database.
-- **Owner is an explicit tag or unknown.** A creator is never passed off as the owner.
-- **Coverage is recorded.** Denied calls and failed scopes are stored, so a scan can show what it could not see.
-- **History is append-only.** Each scan adds observations, which gives new and missing assets.
-
-## AIMS field mapping
-
-| Group | Fields stored |
-|---|---|
-| Identity | asset_key (provider + native id), name, provider, account |
-| Technical | service, region, hosting_type |
-| Ownership | owner, owner_source |
-| Usage | usage_count with usage_window_days, activity_status |
-| Governance | approval_status, risk_tier, reason codes, review_required |
-| Discovery | evidence records, decided_by, reasoning, first_seen, last_seen |
-
-Not captured yet: data sensitivity, linked policies, review dates.
-
-## Shadow AI
-
-`potential_shadow_ai` means AI was found and is not in the approved register. Matching uses
-provider, native resource id, account, region and owner, not the name. Registered but
-drifted assets (for example an unapproved region) are `governance_exception`. The risk
-policy is a short rule table in `governance/shadow.py`, never decided by the LLM.
-
-Not covered: AI SaaS used outside the cloud account, and network or DNS evidence.
+- **Rules decide first.** The LLM only sees ambiguous findings and can never return `ai_confirmed`.
+  Without a key, or if the provider fails, the rules result stands and stays in review.
+- **No secret values.** Only names are collected. Tests search outputs and the database for planted values.
+- **Owner is an explicit tag or unknown.** A CloudTrail creator is labelled `inferred_creator`.
+- **Coverage is recorded** for every scope, so a scan shows what it could not see.
+- **History is append-only**, which gives new and missing assets between scans.
+- **Least privilege.** `docs/aws-readonly-policy.json` is generated from the catalog, with an explicit
+  deny on secret values. See `docs/threat-model.md`.
 
 ## LLM routing and cost
 
-Every request starts on the small model and escalates to the large one only when the output
-fails validation. Provider outages do not escalate. A budget cap blocks calls, and every call
-is logged without prompt text. The CLI prints calls per tier, escalations and cost, plus an
-estimate of the all-large cost. Prices are configurable and the defaults are unverified
-placeholders, so check them before quoting any numbers.
+Requests start on the small model and escalate to the large one only when output fails
+validation. Provider outages do not escalate. A budget cap blocks calls, and the call log
+(no prompt text) is stored per scan. The `/costs` page shows calls per tier, escalations, actual
+cost and an estimated all-large cost. Prices in `.env` are placeholders: verify them before
+quoting any figure.
+
+![LLM cost](docs/screenshots/costs.png)
+
+## Evaluation
+
+`python -m ai_discovery.evals.scoring` scores the latest three-cloud scan against hand-written
+labels (`evals/ground_truth.py`): detection precision and recall, verdict and approval accuracy,
+shadow AI precision and recall, and coverage. Labels were written before scoring.
+Replace this line with your real numbers: detection P=__, R=__; shadow P=__, R=__.
+The estate is small and invented, so 100% here says the pipeline is consistent, not that it
+would score that on a real account.
 
 ## Run it
 
-Needs Python 3.11 and Docker.
+Needs Python 3.11, Docker and Node 18.18+.
 
 ```bash
 python -m venv .venv
@@ -85,30 +78,36 @@ pip install -e ".[dev]"
 copy .env.example .env
 docker compose up -d
 alembic upgrade head
-python -m ai_discovery scan --mode mock --register data/approved_register.yaml --no-llm
+python -m ai_discovery scan --mode mock --clouds aws gcp azure --register data/approved_register.yaml --no-llm
 python -m uvicorn ai_discovery.api.main:app --reload
-pytest
+cd frontend && npm install && npm run dev
 ```
 
-Mock mode builds a fake messy AWS account in moto. Drop `--no-llm` and set `GROQ_API_KEY`
-in `.env` to enable the inspector.
+Open http://localhost:3000. Drop `--no-llm` and set `GROQ_API_KEY` to enable the inspector.
+Tests: `pytest` (needs the `ai_discovery_test` database, see below).
 
-API: `/health`, `/inventory`, `/assets/{asset_key}`, `/coverage/latest`, `/changes`, `/docs`.
+```bash
+docker exec -it ai-discovery-db psql -U discovery -d ai_discovery -c "CREATE DATABASE ai_discovery_test;"
+```
 
-Windows note: if SQLAlchemy fails with an Application Control DLL error, set
-`DISABLE_SQLALCHEMY_CEXT_RUNTIME=1`. If `ai_discovery` is not importable, set `PYTHONPATH=src`.
+Windows notes: if SQLAlchemy fails with an Application Control DLL error, set
+`DISABLE_SQLALCHEMY_CEXT_RUNTIME=1`.
 
 ## Limitations
 
-- Tested against moto, not a real account. Rate limits and pagination at scale are untested.
-- Hidden AI in compute is found by env var names, GPU types and name hints only. There is no
-  dependency, SBOM, IAM or network evidence yet.
-- The AWS catalog lists the API calls we use, but the IAM policy is not generated from it yet.
-- Fusion rules are hand-set and not calibrated against labelled data.
+- Everything is tested on mocks and fixtures. Rate limits, pagination at scale and real IAM
+  enforcement are untested.
+- Hidden AI is found from names, tags, layer names, GPU types and secret names. There is no code,
+  SBOM, IAM-permission or network evidence, so quiet or well-named AI will be missed.
+- Rules are hand-set, not calibrated against labelled real data.
+- The inventory shows assets from the latest scan only. A partial scan hides other clouds' assets.
+- The review API has no authentication, and reviewer names are self-declared. A later scan that
+  changes a verdict does not reopen an earlier approval.
 - A crashed scan leaves no `scan_runs` row.
-- Secret resources appear as their own assets rather than being linked to the resources that use them.
+- Not multi-tenant. No encryption at rest.
+- The all-large cost is an estimate from the small model's token counts.
 
 ## Next
 
-GCP and Azure collectors, a dashboard, an evaluation harness with precision and recall,
-IAM policy generation, CloudTrail owner hints.
+Live GCP and Azure adapters, a Bedrock collector, dependency and SBOM scanning, network evidence,
+authentication and tenancy, generated API types for the frontend, reopening reviews on change.
