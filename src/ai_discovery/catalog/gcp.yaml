@@ -1,0 +1,62 @@
+catalog_version: "2026.10.1"
+provider: gcp
+
+managed_ai_services:
+  - service: aiplatform
+    resource_type: endpoint
+    list_operation: ListEndpoints
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: cloud_monitoring_predictions
+
+  - service: aiplatform
+    resource_type: model
+    list_operation: ListModels
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: none
+
+  - service: notebooks
+    resource_type: instance
+    list_operation: ListInstances
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: none
+
+compute_services:
+  - service: run
+    resource_type: service
+    list_operation: ListServices
+    inspect_fields: [environment_variable_names, image]
+    usage_source: cloud_monitoring_requests
+
+  - service: compute
+    resource_type: instance
+    list_operation: ListInstances
+    inspect_fields: [machine_type, labels]
+    usage_source: none
+
+identity_services:
+  - service: secretmanager
+    resource_type: secret
+    list_operation: ListSecrets
+    inspect_fields: [name]
+
+signals:
+  ai_secret_name_patterns:
+    - OPENAI_API_KEY
+    - ANTHROPIC_API_KEY
+    - GROQ_API_KEY
+    - GEMINI_API_KEY
+    - GOOGLE_API_KEY
+    - HUGGINGFACE_TOKEN
+    - COHERE_API_KEY
+  ai_dependency_names:
+    - openai
+    - anthropic
+    - google-generativeai
+    - langchain
+    - transformers
+    - torch
+  gpu_instance_prefixes: [a2, a3, g2]
+  name_hints: [llm, rag, chatbot, genai, embedding, copilot]
