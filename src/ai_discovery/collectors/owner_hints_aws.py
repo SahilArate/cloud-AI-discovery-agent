@@ -47,7 +47,7 @@ def find_creator(session: boto3.Session, resource: Resource) -> str | None:
             EndTime=end,
             MaxResults=50,
         )
-    except (ClientError, BotoCoreError):
+    except (ClientError, BotoCoreError, NotImplementedError):
         return None
 
     for event in response.get("Events", []):
