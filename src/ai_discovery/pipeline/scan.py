@@ -16,6 +16,7 @@ from ai_discovery.db.tables import (
     AIAsset,
     AssetObservation,
     EvidenceRecord,
+    LLMCall,
     ScanRun,
     ScanScopeResult,
 )
@@ -181,12 +182,31 @@ def run_scan_targets(
         session.flush()  # fills in scan_id
 
         for target in targets:
+            calls_before = len(router.calls) if router is not None else 0
             seen, recorded, target_gaps = _record_target(
                 session, scan, target, register, router, verdict_counts
             )
             resources_seen += seen
             assets_recorded += recorded
             gaps += target_gaps
+        
+                if router is not None:
+            for call in router.calls[calls_before:]:
+                session.add(
+                    LLMCall(
+                        scan_id=scan.scan_id,
+                        task=call.task,
+                        tier=call.tier.value,
+                        model_name=call.model_name,
+                        input_tokens=call.input_tokens,
+                        output_tokens=call.output_tokens,
+                        cost_usd=call.cost_usd,
+                        latency_ms=call.latency_ms,
+                        outcome=call.outcome,
+                        escalated_from=call.escalated_from.value if call.escalated_from else None,
+                        called_at=call.called_at,
+                    )
+                )
 
         scan.resources_seen = resources_seen
         scan.finished_at = datetime.now(timezone.utc)

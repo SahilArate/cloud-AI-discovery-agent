@@ -16,7 +16,7 @@ from ai_discovery.collectors.base import ScanScope
 from ai_discovery.config import get_settings
 from ai_discovery.db.base import Base
 from ai_discovery.db.session import _get_session_factory, get_engine, session_scope
-from ai_discovery.db.tables import AIAsset, AssetObservation, EvidenceRecord
+from ai_discovery.db.tables import AIAsset, AssetObservation, EvidenceRecord, LLMCall
 from ai_discovery.governance.register import ApprovedRegister
 from ai_discovery.pipeline.scan import run_scan
 
@@ -241,3 +241,28 @@ def test_llm_can_clear_a_finding_out_of_the_inventory(test_database, aws_account
 
     assert summary.assets_recorded == 0
     assert summary.verdict_counts == {"not_ai_evidenced": 1}
+
+def test_llm_calls_are_stored_with_the_scan(test_database, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    router = LLMRouter(EchoInspectorProvider("ai_suspected"), SMALL, LARGE)
+
+    summary = _scan_with(router)
+
+    with session_scope() as session:
+        calls = session.scalars(select(LLMCall)).all()
+
+    assert len(calls) == 1
+    assert calls[0].scan_id == summary.scan_id
+    assert calls[0].tier == "small"
+    assert calls[0].outcome == "ok"
+    assert calls[0].input_tokens == 100
+    assert calls[0].task == "inspect_resource"
+
+
+def test_scan_without_a_router_stores_no_llm_calls(test_database, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+
+    _scan()
+
+    with session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(LLMCall)) == 0

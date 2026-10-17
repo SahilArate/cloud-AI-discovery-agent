@@ -3,9 +3,10 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 
 from ai_discovery.db.base import Base
 
@@ -141,3 +142,23 @@ class ScanScopeResult(Base):
     resources_discovered: Mapped[int] = mapped_column(Integer, default=0)
     resources_inspected: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[list] = mapped_column(JSONB, default=list)
+
+class LLMCall(Base):
+    """One model call made during a scan. Counts and costs only, never prompt text."""
+
+    __tablename__ = "llm_calls"
+
+    call_id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=lambda: _new_id("call")
+    )
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scan_runs.scan_id"), index=True)
+    task: Mapped[str] = mapped_column(String(64))
+    tier: Mapped[str] = mapped_column(String(8))
+    model_name: Mapped[str] = mapped_column(String(128))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    outcome: Mapped[str] = mapped_column(String(24))
+    escalated_from: Mapped[str | None] = mapped_column(String(8))
+    called_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
