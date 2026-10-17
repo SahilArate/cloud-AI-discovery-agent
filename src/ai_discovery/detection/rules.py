@@ -58,13 +58,13 @@ def _secret_name_evidence(resource: Resource, catalog: Catalog) -> list[Evidence
                 )
             )
 
-    if resource.service == "secretsmanager" and resource.name.upper() in known_names:
+    if resource.resource_type == "secret" and resource.name.upper() in known_names:
         found.append(
             _make_evidence(
                 resource,
                 EvidenceType.AI_SECRET_NAME,
                 EvidenceStrength.SUPPORTING,
-                source="secretsmanager_listing",
+                source=f"{resource.service}_listing",
                 detail=f"secret named {resource.name}",
             )
         )

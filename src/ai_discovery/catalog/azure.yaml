@@ -1,0 +1,71 @@
+catalog_version: "2026.10.1"
+provider: azure
+
+managed_ai_services:
+  # Azure OpenAI, Vision, Language and Speech are all Cognitive Services accounts.
+  - service: cognitiveservices
+    resource_type: account
+    list_operation: ListAccounts
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: azure_monitor_calls
+
+  - service: machinelearningservices
+    resource_type: workspace
+    list_operation: ListWorkspaces
+    evidence_type: managed_ai_resource
+    strength: strong
+    usage_source: none
+
+  - service: search
+    resource_type: search_service
+    list_operation: ListSearchServices
+    evidence_type: managed_ai_resource
+    strength: supporting
+    usage_source: none
+
+compute_services:
+  - service: web
+    resource_type: site
+    list_operation: ListSites
+    inspect_fields: [app_setting_names, kind]
+    usage_source: azure_monitor_requests
+
+  - service: compute
+    resource_type: virtual_machine
+    list_operation: ListVirtualMachines
+    inspect_fields: [vm_size, tags]
+    usage_source: none
+
+identity_services:
+  - service: keyvault
+    resource_type: secret
+    list_operation: ListSecrets
+    inspect_fields: [name]
+
+signals:
+  # Key Vault secret names cannot contain underscores, so the dashed forms are listed too.
+  ai_secret_name_patterns:
+    - OPENAI_API_KEY
+    - OPENAI-API-KEY
+    - AZURE_OPENAI_API_KEY
+    - AZURE-OPENAI-API-KEY
+    - ANTHROPIC_API_KEY
+    - ANTHROPIC-API-KEY
+    - GROQ_API_KEY
+    - GROQ-API-KEY
+    - GEMINI_API_KEY
+    - GEMINI-API-KEY
+    - HUGGINGFACE_TOKEN
+    - HUGGINGFACE-TOKEN
+    - COHERE_API_KEY
+    - COHERE-API-KEY
+  ai_dependency_names:
+    - openai
+    - anthropic
+    - langchain
+    - transformers
+    - torch
+    - semantic-kernel
+  gpu_instance_prefixes: [standard_nc, standard_nd, standard_nv]
+  name_hints: [llm, rag, chatbot, genai, embedding, copilot]

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from ai_discovery.models.coverage import ScopeCoverage
 from ai_discovery.models.enums import CloudProvider
 from ai_discovery.models.resource import Resource
+from ai_discovery.models.coverage import CollectionError, ScopeCoverage
+from ai_discovery.models.enums import CloudProvider, CoverageStatus
 
 
 class ScanScope(BaseModel):
@@ -36,3 +38,11 @@ class BaseCollector(ABC):
     def read_usage(self, resource: Resource) -> int | None:
         """Calls in the last 30 days, or None if this collector can't measure it."""
         return None
+
+def coverage_status_for(discovered: int, errors: list[CollectionError]) -> CoverageStatus:
+    """Complete with no errors, failed if nothing was found and something broke, else partial."""
+    if not errors:
+        return CoverageStatus.COMPLETE
+    if discovered == 0:
+        return CoverageStatus.FAILED
+    return CoverageStatus.PARTIAL
