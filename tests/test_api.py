@@ -8,6 +8,7 @@ import boto3
 import pytest
 from fastapi.testclient import TestClient
 from moto import mock_aws
+from botocore.exceptions import ClientError
 
 from ai_discovery.api.main import app
 from ai_discovery.collectors.aws import AWSCollector
@@ -23,7 +24,7 @@ REGION = "ap-south-1"
 ROLE_ARN = f"arn:aws:iam::{ACCOUNT_ID}:role/lambda-test-role"
 FAKE_SECRET_VALUE = "sk-test-not-a-real-key"
 TEST_DATABASE_URL = "postgresql+psycopg://discovery:discovery@localhost:5432/ai_discovery_test"
-
+INVOICE_HELPER_KEY = f"aws:arn:aws:lambda:{REGION}:{ACCOUNT_ID}:function:invoice-helper"
 
 def _clear_caches() -> None:
     get_settings.cache_clear()
@@ -127,3 +128,113 @@ def test_inventory_never_exposes_a_secret_value(client, aws_account):
     response = client.get("/inventory")
 
     assert FAKE_SECRET_VALUE not in response.text
+
+
+def _add_notebook(name: str) -> None:
+    boto3.client("sagemaker", region_name=REGION).create_notebook_instance(
+        NotebookInstanceName=name, InstanceType="ml.t3.medium", RoleArn=ROLE_ARN
+    )
+
+
+# ---- asset detail ----
+
+def test_asset_detail_shows_history_and_evidence(client, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _scan()
+    _scan()
+
+    response = client.get(f"/assets/{INVOICE_HELPER_KEY}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "invoice-helper"
+    assert len(body["observations"]) == 2
+    evidence = body["observations"][0]["evidence"]
+    assert [item["detail"] for item in evidence] == ["env var name OPENAI_API_KEY"]
+    assert FAKE_SECRET_VALUE not in response.text
+
+
+def test_unknown_asset_gives_404(client):
+    response = client.get("/assets/aws:arn:does-not-exist")
+
+    assert response.status_code == 404
+
+
+# ---- coverage ----
+
+def test_coverage_needs_at_least_one_scan(client):
+    assert client.get("/coverage/latest").status_code == 404
+
+
+def test_coverage_reports_all_scopes_complete_for_a_clean_scan(client, aws_account):
+    _scan()
+
+    body = client.get("/coverage/latest").json()
+
+    assert body["scopes_total"] == 4
+    assert body["scopes_complete"] == 4
+    assert body["scopes_with_gaps"] == 0
+
+
+def test_denied_call_shows_up_as_a_coverage_gap(client, aws_account):
+    _add_notebook("research-notebook")
+
+    def deny_list_endpoints(**kwargs):
+        raise ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "not allowed"}},
+            "ListEndpoints",
+        )
+
+    session = boto3.Session()
+    session.events.register("before-call.sagemaker.ListEndpoints", deny_list_endpoints)
+    scope = ScanScope(account_id=ACCOUNT_ID, regions=[REGION])
+    run_scan(AWSCollector(session=session), scope, ApprovedRegister())
+
+    body = client.get("/coverage/latest").json()
+
+    assert body["scan_status"] == "partial"
+    assert body["scopes_with_gaps"] == 1
+    gap = next(scope for scope in body["scopes"] if scope["status"] != "complete")
+    assert gap["service"] == "sagemaker"
+    assert gap["errors"][0]["code"] == "AccessDeniedException"
+
+
+# ---- changes ----
+
+def test_changes_with_a_single_scan_has_nothing_to_compare(client, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _scan()
+
+    body = client.get("/changes").json()
+
+    assert body["previous_scan_id"] is None
+    assert body["new_assets"] == []
+
+
+def test_new_asset_between_scans_is_reported(client, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _scan()
+    _add_lambda("chat-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _scan()
+
+    body = client.get("/changes").json()
+
+    assert body["new_assets"] == [
+        f"aws:arn:aws:lambda:{REGION}:{ACCOUNT_ID}:function:chat-helper"
+    ]
+    assert body["missing_assets"] == []
+
+
+def test_asset_that_disappears_is_reported_as_missing(client, aws_account):
+    _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _add_lambda("chat-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
+    _scan()
+    boto3.client("lambda", region_name=REGION).delete_function(FunctionName="chat-helper")
+    _scan()
+
+    body = client.get("/changes").json()
+
+    assert body["missing_assets"] == [
+        f"aws:arn:aws:lambda:{REGION}:{ACCOUNT_ID}:function:chat-helper"
+    ]
+    assert "coverage" in body["note"].lower()
