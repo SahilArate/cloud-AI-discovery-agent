@@ -24,3 +24,22 @@ entries:
     native_ids:
       - arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/research-notebook
     approved_regions: [ap-south-1]
+  
+  
+  - register_id: AI-004
+    name: Support bot
+    provider: gcp
+    account_id: demo-project
+    native_ids:
+      - projects/demo-project/locations/asia-south1/endpoints/support-bot
+    approved_regions: [asia-south1]
+    owner: ml-platform
+
+  - register_id: AI-005
+    name: Contoso OpenAI
+    provider: azure
+    account_id: "00000000-0000-0000-0000-000000000001"
+    native_ids:
+      - /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-demo/providers/Microsoft.CognitiveServices/accounts/contoso-openai
+    approved_regions: [centralindia]
+    owner: data-science
