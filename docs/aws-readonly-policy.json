@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DiscoveryReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:LookupEvents",
+        "cloudwatch:GetMetricStatistics",
+        "ec2:DescribeInstances",
+        "lambda:ListFunctions",
+        "lambda:ListTags",
+        "sagemaker:ListEndpoints",
+        "sagemaker:ListNotebookInstances",
+        "sagemaker:ListTags",
+        "secretsmanager:ListSecrets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeverReadSecretValues",
+      "Effect": "Deny",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
