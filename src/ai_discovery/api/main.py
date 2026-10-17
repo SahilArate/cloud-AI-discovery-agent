@@ -53,17 +53,24 @@ def health(session: Session = Depends(get_session)) -> dict[str, str]:
     session.execute(text("select 1"))
     return {"status": "ok"}
 
-
 @app.get("/inventory", response_model=list[InventoryItem])
-def inventory(session: Session = Depends(get_session)) -> list[InventoryItem]:
-    """Latest observation for every asset we have ever recorded."""
-    rows = session.execute(
+def inventory(
+    include_missing: bool = False, session: Session = Depends(get_session)
+) -> list[InventoryItem]:
+    """AI assets seen in the latest scan. include_missing=true adds older, unseen ones."""
+    query = (
         select(AssetObservation, AIAsset)
         .join(AIAsset, AIAsset.asset_key == AssetObservation.asset_key)
         .ext(distinct_on(AssetObservation.asset_key))
         .order_by(AssetObservation.asset_key, AssetObservation.observed_at.desc())
-    ).all()
+    )
+    if not include_missing:
+        latest = _latest_scans(session, 1)
+        if not latest:
+            return []
+        query = query.where(AssetObservation.scan_id == latest[0].scan_id)
 
+    rows = session.execute(query).all()
     return [
         InventoryItem(
             asset_key=asset.asset_key,
@@ -330,9 +337,17 @@ def _to_review_item(review: GovernanceReview) -> ReviewItem:
 
 
 def _latest_observations(session: Session) -> dict[str, AssetObservation]:
+    """Newest observation per asset, from the latest scan only."""
+    scans = _latest_scans(session, 1)
+    if not scans:
+        return {}
+    in_latest_scan = (
+        select(AssetObservation)
+        .where(AssetObservation.scan_id == scans[0].scan_id)
+        .order_by(AssetObservation.observed_at.desc())
+    )
     latest: dict[str, AssetObservation] = {}
-    newest_first = select(AssetObservation).order_by(AssetObservation.observed_at.desc())
-    for observation in session.scalars(newest_first):
+    for observation in session.scalars(in_latest_scan):
         latest.setdefault(observation.asset_key, observation)
     return latest
 
