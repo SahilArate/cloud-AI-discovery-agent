@@ -1,13 +1,13 @@
 """Runs one scan end to end: collect, detect, enrich, assess, save."""
 
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ai_discovery.agents.inspector import inspect
-from ai_discovery.llm.router import LLMRouter
 from ai_discovery.catalog.loader import load_catalog
 from ai_discovery.collectors.base import BaseCollector, ScanScope
 from ai_discovery.config import get_settings
@@ -20,15 +20,16 @@ from ai_discovery.db.tables import (
     ScanScopeResult,
 )
 from ai_discovery.detection.classifier import classify
+from ai_discovery.detection.correlate import link_secrets
 from ai_discovery.detection.rules import gather_evidence
 from ai_discovery.enrichment.owner import resolve_owner
 from ai_discovery.enrichment.usage import summarise_usage
 from ai_discovery.governance.register import ApprovedRegister
 from ai_discovery.governance.shadow import assess
+from ai_discovery.llm.router import LLMRouter
 from ai_discovery.models.enums import AIVerdict
 from ai_discovery.models.resource import Resource
 
-from dataclasses import dataclass
 
 class ScanSummary(BaseModel):
     scan_id: str
@@ -36,6 +37,14 @@ class ScanSummary(BaseModel):
     assets_recorded: int
     verdict_counts: dict[str, int]
     scopes_with_gaps: int
+
+
+@dataclass
+class ScanTarget:
+    """One cloud account to scan: the collector that reads it and what it may look at."""
+
+    collector: BaseCollector
+    scope: ScanScope
 
 
 def _upsert_asset(session: Session, resource: Resource, now: datetime) -> None:
@@ -58,14 +67,6 @@ def _upsert_asset(session: Session, resource: Resource, now: datetime) -> None:
         asset.name = resource.name
 
 
-@dataclass
-class ScanTarget:
-    """One cloud account to scan: the collector that reads it and what it may look at."""
-
-    collector: BaseCollector
-    scope: ScanScope
-
-
 def _record_target(
     session: Session,
     scan: ScanRun,
@@ -81,8 +82,14 @@ def _record_target(
     now = datetime.now(timezone.utc)
     assets_recorded = 0
 
+    linked_evidence, absorbed_secrets = link_secrets(result.resources, catalog)
+
     for resource in result.resources:
-        evidence = gather_evidence(resource, catalog)
+        # A secret linked to a consumer is carried as that consumer's evidence instead.
+        if resource.asset_key in absorbed_secrets:
+            continue
+
+        evidence = gather_evidence(resource, catalog) + linked_evidence.get(resource.asset_key, [])
         finding = classify(resource, evidence)
 
         # Only ambiguous findings go to the LLM. Confirmed and clean ones never do.

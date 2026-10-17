@@ -114,11 +114,6 @@ EXPECTED_ASSETS = [
 # Each pair is (key prefix, expected verdict, expected approval).
 EXPECTED_BY_PREFIX = [
     (
-        f"{_AWS}:secretsmanager:ap-south-1:{_ACCT}:secret:OPENAI_API_KEY",
-        AIVerdict.AI_SUSPECTED,
-        ApprovalStatus.POTENTIAL_SHADOW_AI,
-    ),
-    (
         f"{_AWS}:ec2:ap-south-1:{_ACCT}:instance/",
         AIVerdict.UNKNOWN,
         ApprovalStatus.NOT_ASSESSED,
