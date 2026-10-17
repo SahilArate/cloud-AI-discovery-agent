@@ -181,16 +181,18 @@ def run_scan_targets(
         session.add(scan)
         session.flush()  # fills in scan_id
 
+        # A router can be reused, so only save the calls made during this scan.
+        calls_before = len(router.calls) if router is not None else 0
+
         for target in targets:
-            calls_before = len(router.calls) if router is not None else 0
             seen, recorded, target_gaps = _record_target(
                 session, scan, target, register, router, verdict_counts
             )
             resources_seen += seen
             assets_recorded += recorded
             gaps += target_gaps
-        
-                if router is not None:
+
+        if router is not None:
             for call in router.calls[calls_before:]:
                 session.add(
                     LLMCall(
@@ -219,8 +221,6 @@ def run_scan_targets(
             verdict_counts=dict(verdict_counts),
             scopes_with_gaps=gaps,
         )
-
-
 def run_scan(
     collector: BaseCollector,
     scope: ScanScope,
