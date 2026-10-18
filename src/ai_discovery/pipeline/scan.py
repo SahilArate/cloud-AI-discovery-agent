@@ -221,6 +221,7 @@ def run_scan_targets(
             verdict_counts=dict(verdict_counts),
             scopes_with_gaps=gaps,
         )
+        
 def run_scan(
     collector: BaseCollector,
     scope: ScanScope,

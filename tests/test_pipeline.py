@@ -137,7 +137,7 @@ def test_secret_value_never_reaches_the_database(test_database, aws_account):
     assert FAKE_SECRET_VALUE not in " ".join(details + reasons)
 
 def test_lambda_invocations_make_the_asset_active(test_database, aws_account):
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     _add_lambda("invoice-helper", env={"OPENAI_API_KEY": FAKE_SECRET_VALUE})
     boto3.client("cloudwatch", region_name=REGION).put_metric_data(
