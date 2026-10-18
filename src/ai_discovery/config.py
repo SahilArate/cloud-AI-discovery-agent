@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     large_input_price_per_million: float = 0.15
     large_output_price_per_million: float = 0.60
     llm_budget_usd: float = 0.50
+    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    demo_read_only: bool = False
 
 
 @lru_cache

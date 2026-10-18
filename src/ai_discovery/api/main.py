@@ -32,7 +32,7 @@ app = FastAPI(title="AI Discovery Agent", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[o.strip() for o in get_settings().allowed_origins.split(",") if o.strip()],
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
@@ -405,6 +405,9 @@ def review_queue(session: Session = Depends(get_session)) -> list[QueueItem]:
 def submit_review(
     request: ReviewRequest, session: Session = Depends(get_session)
 ) -> ReviewItem:
+    if get_settings().demo_read_only:
+        raise HTTPException(status_code=403, detail="reviews are disabled on the public demo")
+
     if session.get(AIAsset, request.asset_key) is None:
         raise HTTPException(status_code=404, detail="asset not found")
 

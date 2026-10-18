@@ -87,3 +87,13 @@ def test_reviewer_and_reason_are_required(client):
 
 def test_review_of_an_unknown_asset_is_a_404(client):
     assert _decide(client, "gcp:does-not-exist", "approve").status_code == 404
+
+
+def test_read_only_demo_rejects_reviews(client, monkeypatch):
+    from ai_discovery.config import get_settings
+
+    monkeypatch.setenv("DEMO_READ_ONLY", "true")
+    get_settings.cache_clear()
+
+    assert _decide(client, ENDPOINT_KEY, "approve").status_code == 403
+    get_settings.cache_clear()

@@ -14,7 +14,11 @@ from ai_discovery.config import get_settings
 def get_engine() -> Engine:
     settings = get_settings()
     # pool_pre_ping drops dead connections, e.g. after the container restarts
-    return create_engine(settings.database_url, pool_pre_ping=True)
+    return create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    connect_args={"prepare_threshold": None},  # pooled connections can't reuse prepared statements
+    )
 
 
 @lru_cache
