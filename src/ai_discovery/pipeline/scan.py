@@ -214,6 +214,13 @@ def run_scan_targets(
         scan.finished_at = datetime.now(timezone.utc)
         scan.status = "partial" if gaps else "complete"
 
+        for coverage in result.coverage:
+            if coverage.is_gap:
+                for error in coverage.errors:
+                    gap_messages.append(
+                        f"{coverage.region}/{coverage.service}: {error.code} on {error.operation}"
+                    )
+
         return ScanSummary(
             scan_id=scan.scan_id,
             resources_seen=resources_seen,

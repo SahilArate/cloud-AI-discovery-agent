@@ -3,12 +3,14 @@
 import argparse
 from contextlib import nullcontext
 from pathlib import Path
+import boto3
 
 from ai_discovery.collectors.aws import AWSCollector
 from ai_discovery.collectors.azure import AzureCollector
 from ai_discovery.collectors.base import ScanScope
 from ai_discovery.collectors.gcp import GCPCollector
 from ai_discovery.config import get_settings
+from botocore.exceptions import BotoCoreError, ClientError
 from ai_discovery.demo.fake_account import ACCOUNT_ID, HOME_REGION, OTHER_REGION, build_messy_account
 from ai_discovery.demo.fixture_apis import (
     AZURE_REGION,
@@ -117,8 +119,24 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit("live mode needs --account-id and --regions")
         summary = _run_live_scan(args.account_id, args.regions, register, router)
 
+        for message in summary.gap_messages:
+            print(f"  GAP            : {message}")
+        if summary.resources_seen == 0 and summary.scopes_with_gaps:
+            print("  WARNING        : nothing was discovered and some scopes failed. Check permissions.")
+
     _print_summary(summary, args.clouds, args.mode)
     _print_cost_report(router)
+
+def _verify_account(expected: str) -> None:
+    """Refuse to scan if the credentials belong to a different account than --account-id."""
+    try:
+        actual = boto3.Session().client("sts").get_caller_identity()["Account"]
+    except (ClientError, BotoCoreError) as error:
+        raise SystemExit(f"could not verify AWS credentials: {type(error).__name__}")
+    if actual != expected:
+        raise SystemExit(
+            f"credentials belong to account {actual}, but --account-id is {expected}. Refusing to scan."
+        )
 
 
 if __name__ == "__main__":
