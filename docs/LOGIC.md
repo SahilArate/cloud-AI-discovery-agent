@@ -8,6 +8,7 @@ appears, the file that holds it is named.
 
 | # | Stage | Input | Output | Uses LLM? | Code |
 |---|---|---|---|---|---|
+| 0 | Verify account (live mode) | credentials, `--account-id` | proceed or refuse | No | `cli.py` |
 | 1 | Collect | cloud account, scope | `Resource` list plus coverage | No | `collectors/` |
 | 2 | Correlate | all resources | secrets linked to consumers | No | `detection/correlate.py` |
 | 3 | Evidence | one resource | `Evidence` list | No | `detection/rules.py` |
@@ -33,7 +34,8 @@ A detail never contains a secret value.
 | `name_hint` | The resource name contains a hint word (`llm`, `rag`, `chatbot` and so on) as a whole word | **weak** | Names mislead |
 
 Not built: `model_invocation`, `external_api_call`, `ai_iam_permission`. The types exist in the enum,
-no rule produces them yet.
+no rule produces them yet. `model_invocation` is what on-demand Bedrock discovery would produce
+(see TECHNICAL.md section 16).
 
 Matching details:
 
@@ -134,22 +136,27 @@ Configured in `config.py` and `.env`: model names, per-million-token prices, `LL
 |---|---|---|
 | 1 | Tag, checked in this order: `owner`, `team`, `business-owner`, `cost-center-owner` (case-insensitive, empty ignored) | `explicit_tag` |
 | 2 | CloudTrail create event for the resource, last 90 days, only when no tag exists | `inferred_creator` |
-| 3 | Nothing found | `unknown` |
+| 3 | Nothing found, or the lookup failed or is unsupported | `unknown` |
 
 Only `explicit_tag` counts as a verified owner. The creator may be a pipeline role, or may have left.
+A failed or throttled CloudTrail lookup currently falls back to `unknown` without a coverage gap (known gap).
 
 ### Usage
 
+The reader asks CloudWatch which metrics exist for the resource (`ListMetrics`), then sums each one
+over the window. This also finds SageMaker's extra `VariantName` dimension.
+
 | Measured value | Activity status |
 |---|---|
-| No metric available (`None`) | `activity_unknown` |
+| No metric exists, call failed, or resource type unsupported (`None`) | `activity_unknown` |
 | Calls greater than 0 in the window | `active_observed` |
-| 0 calls, earlier use known | `dormant_observed` |
-| 0 calls, no earlier use known | `no_activity_observed` |
+| Metric exists, 0 calls, earlier use known | `dormant_observed` |
+| Metric exists, 0 calls, no earlier use known | `no_activity_observed` |
 
-`None` and `0` mean different things: "could not measure" and "measured nothing". Usage is stored as a count
-and a window (for example 4,000 in 30 days), never as a vague label. Only Lambda and SageMaker endpoints
-have a metric today. A Lambda's invocations are function activity, not proof of AI calls.
+`None` and `0` mean different things: "could not measure" and "measured nothing". A function that has
+never published a metric is therefore unknown, not idle. Usage is stored as a count and a window
+(for example 4,000 in 30 days), never as a vague label. Only Lambda and SageMaker endpoints have a
+metric today. A Lambda's invocations are function activity, not proof of AI calls.
 
 ## 8. Approval and risk
 
@@ -176,7 +183,7 @@ An owner is only compared when both the register and the scan know one. An empty
 The label says **potential** because the register may simply be out of date. A person makes the final call.
 The LLM never sets risk. The table above is the policy, in `governance/shadow.py`.
 
-## 9. Coverage
+## 9. Coverage and scan safety
 
 Every collector returns coverage with its resources: one record per provider, account, region and service.
 
@@ -188,6 +195,14 @@ Every collector returns coverage with its resources: one record per provider, ac
 
 A failed or denied call becomes a coverage gap with the error code and operation. The other services still run.
 A scan with any gap is stored as `partial`.
+
+Live-run safeguards, added after the first real attempt:
+
+| Safeguard | Behaviour |
+|---|---|
+| Account verification | Live mode calls `sts:GetCallerIdentity` and refuses to scan if the credentials belong to a different account than `--account-id` |
+| Gap reasons printed | Each failing call is listed, for example `ap-south-1/lambda: AccessDeniedException on lambda:ListFunctions` |
+| All-denied warning | If nothing was discovered and scopes failed, the CLI warns that permissions need checking instead of looking like a clean scan |
 
 ## 10. Review workflow
 
@@ -204,6 +219,7 @@ stateDiagram-v2
 An asset needs a person when it is `review_required`, a potential shadow AI, or a governance exception.
 Each decision adds a row with reviewer and reason. Nothing is edited, so the history is the audit trail.
 Approving does not change the register. It records that someone accepted the finding.
+On the public demo (`DEMO_READ_ONLY=true`) the API rejects decisions with 403.
 
 ## 11. Change detection
 
@@ -230,7 +246,8 @@ Resources not stored by a scan are treated as "not AI, not assessed", so negativ
 | Scopes complete, resources inspected | Coverage ratios |
 
 Unlabelled assets that were flagged count as false positives. A ratio with nothing to measure prints `n/a`.
-Tests prove the scorer can fail: breaking detection drops recall to 0, and removing the register lowers shadow precision.
+Tests prove the scorer can fail: with detection and secret linking both disabled, recall drops to 0,
+and removing the register lowers shadow precision.
 
 This eval says the pipeline is consistent with its labels on an invented estate. It does not say it would
 score the same on a real account.
