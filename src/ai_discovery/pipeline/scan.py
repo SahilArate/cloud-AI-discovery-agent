@@ -38,6 +38,7 @@ class ScanSummary(BaseModel):
     assets_recorded: int
     verdict_counts: dict[str, int]
     scopes_with_gaps: int
+    gap_messages: list[str] = []
 
 
 @dataclass
@@ -75,6 +76,7 @@ def _record_target(
     register: ApprovedRegister,
     router: LLMRouter | None,
     verdict_counts: Counter[str],
+    gap_messages: list[str],
 ) -> tuple[int, int, int]:
     """Scan one target into an open scan run. Returns (resources seen, assets stored, gaps)."""
     collector = target.collector
@@ -163,6 +165,13 @@ def _record_target(
             )
         )
 
+    for coverage in result.coverage:
+        if coverage.is_gap:
+            for error in coverage.errors:
+                gap_messages.append(
+                    f"{coverage.region}/{coverage.service}: {error.code} on {error.operation}"
+                )
+
     gaps = sum(1 for coverage in result.coverage if coverage.is_gap)
     return len(result.resources), assets_recorded, gaps
 
@@ -174,6 +183,7 @@ def run_scan_targets(
 ) -> ScanSummary:
     """One scan run covering every target, so coverage and changes see all clouds together."""
     verdict_counts: Counter[str] = Counter()
+    gap_messages: list[str] = []
     resources_seen = assets_recorded = gaps = 0
 
     with session_scope() as session:
@@ -186,7 +196,7 @@ def run_scan_targets(
 
         for target in targets:
             seen, recorded, target_gaps = _record_target(
-                session, scan, target, register, router, verdict_counts
+                session, scan, target, register, router, verdict_counts, gap_messages
             )
             resources_seen += seen
             assets_recorded += recorded
@@ -214,12 +224,6 @@ def run_scan_targets(
         scan.finished_at = datetime.now(timezone.utc)
         scan.status = "partial" if gaps else "complete"
 
-        for coverage in result.coverage:
-            if coverage.is_gap:
-                for error in coverage.errors:
-                    gap_messages.append(
-                        f"{coverage.region}/{coverage.service}: {error.code} on {error.operation}"
-                    )
 
         return ScanSummary(
             scan_id=scan.scan_id,
@@ -227,8 +231,10 @@ def run_scan_targets(
             assets_recorded=assets_recorded,
             verdict_counts=dict(verdict_counts),
             scopes_with_gaps=gaps,
-        )
+            gap_messages=gap_messages,
         
+        )
+
 def run_scan(
     collector: BaseCollector,
     scope: ScanScope,
